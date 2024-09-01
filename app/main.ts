@@ -35,7 +35,7 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
 
         const header = Buffer.alloc(12);
         header.writeUInt16BE(id, 0); // ID
-        header.writeUInt16BE(0x8180 | (opcode << 11) | (rd << 8) | rcode, 2); // Flags
+        header.writeUInt16BE(0x8180 | (opcode << 11) | (0 << 8) | rcode, 2); // Flags
         header.writeUInt16BE(1, 4); // QDCOUNT
         header.writeUInt16BE(1, 6); // ANCOUNT
         header.writeUInt16BE(0, 8); // NSCOUNT
