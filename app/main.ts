@@ -141,7 +141,44 @@ class DNSMessage {
       throw new Error('DNSMessage question mode not implemented');
     }
   }
-  // ... rest of the class ...
+
+  toBuffer(): Buffer {
+    const header = this.getHeader();
+    const questions = this.getQuestionSection();
+    const answers = this.getAnswerSection();
+
+    return Buffer.concat([header, questions, answers]);
+  }
+
+  private getHeader(): Buffer {
+    const header = Buffer.alloc(12);
+    header.writeUInt16BE(this.packetId, 0);
+    
+    let flags = 0;
+    flags |= this.queryResponse ? 0x8000 : 0;
+    flags |= (this.opCode << 11) & 0x7800;
+    flags |= this.authoritativeAnswer ? 0x0400 : 0;
+    flags |= this.truncation ? 0x0200 : 0;
+    flags |= this.recursionDesired ? 0x0100 : 0;
+    flags |= this.recursionAvailable ? 0x0080 : 0;
+    flags |= this.responseCode & 0x000F;
+    
+    header.writeUInt16BE(flags, 2);
+    header.writeUInt16BE(this.records.length, 4); // QDCOUNT
+    header.writeUInt16BE(this.records.length, 6); // ANCOUNT
+    header.writeUInt16BE(0, 8); // NSCOUNT
+    header.writeUInt16BE(0, 10); // ARCOUNT
+
+    return header;
+  }
+
+  private getQuestionSection(): Buffer {
+    return Buffer.concat(this.records.map(recordToQuestion));
+  }
+
+  private getAnswerSection(): Buffer {
+    return Buffer.concat(this.records.map(recordToAnswer));
+  }
 }
 
 class DNS {
@@ -181,10 +218,11 @@ class DNS {
 
 udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
   try {
-    const response = new DNSMessage(data).toBuffer();
+    const dnsMessage = new DNSMessage(data);
+    const response = dnsMessage.toBuffer();
     udpSocket.send(response, remoteAddr.port, remoteAddr.address);
   } catch (e) {
-    console.log(`Error sending data: ${e}`);
+    console.log(`Error processing or sending data: ${e}`);
   }
 });
 udpSocket.bind(PORT, '127.0.0.1', () => {
