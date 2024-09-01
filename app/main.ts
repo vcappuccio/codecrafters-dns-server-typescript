@@ -64,60 +64,50 @@ class DNSMessage {
 
   private parseQuestion(data: Buffer, offset: number): [Question, number] {
     const [name, newOffset] = this.parseName(data, offset);
-    offset = newOffset;
-    const qtype = data.readUInt16BE(offset);
-    offset += 2;
-    const qclass = data.readUInt16BE(offset);
-    offset += 2;
-    return [{ name, qtype, qclass }, offset];
+    const qtype = data.readUInt16BE(newOffset);
+    const qclass = data.readUInt16BE(newOffset + 2);
+    return [{ name, qtype, qclass }, newOffset + 4];
   }
 
   private parseAnswer(data: Buffer, offset: number): [DNSRecord, number] {
     const [name, newOffset] = this.parseName(data, offset);
-    offset = newOffset;
-    const type = data.readUInt16BE(offset);
-    offset += 2;
-    const cls = data.readUInt16BE(offset);
-    offset += 2;
-    const ttl = data.readUInt32BE(offset);
-    offset += 4;
-    const rdlength = data.readUInt16BE(offset);
-    offset += 2;
-    const rdata = data.slice(offset, offset + rdlength);
-    offset += rdlength;
-    return [{ name, type, cls, ttl, rdlength, rdata }, offset];
+    const type = data.readUInt16BE(newOffset);
+    const cls = data.readUInt16BE(newOffset + 2);
+    const ttl = data.readUInt32BE(newOffset + 4);
+    const rdlength = data.readUInt16BE(newOffset + 8);
+    const rdata = data.slice(newOffset + 10, newOffset + 10 + rdlength);
+    return [{ name, type, cls, ttl, rdlength, rdata }, newOffset + 10 + rdlength];
   }
 
   private parseName(data: Buffer, offset: number): [string, number] {
     const labels: string[] = [];
+    let currentOffset = offset;
     let jumping = false;
     let jumpOffset = -1;
 
     while (true) {
-      const length = data[offset];
+      const length = data[currentOffset];
+
       if (length === 0) {
-        if (!jumping) offset++;
+        if (!jumping) currentOffset++;
         break;
       }
-      if ((length & 0xC0) === 0xC0) {
+
+      if ((length & 0xc0) === 0xc0) {
         if (!jumping) {
-          jumpOffset = offset + 2;
+          jumpOffset = currentOffset + 2;
         }
-        offset = ((length & 0x3F) << 8) | data[offset + 1];
+        const pointerOffset = ((length & 0x3f) << 8) | data[currentOffset + 1];
+        currentOffset = pointerOffset;
         jumping = true;
-        continue;
-      }
-      offset++;
-      labels.push(data.slice(offset, offset + length).toString('ascii'));
-      offset += length;
-      if (jumping && jumpOffset !== -1) {
-        offset = jumpOffset;
-        jumping = false;
-        jumpOffset = -1;
+      } else {
+        currentOffset++;
+        labels.push(data.slice(currentOffset, currentOffset + length).toString('ascii'));
+        currentOffset += length;
       }
     }
 
-    return [labels.join('.'), offset];
+    return [labels.join('.'), jumping ? jumpOffset : currentOffset];
   }
 
   toBuffer(): Buffer {
