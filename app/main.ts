@@ -128,46 +128,68 @@ class DNSMessage {
   private recursionDesired: boolean;
   private recursionAvailable: boolean = false;
   private responseCode: number = 0;
-  private records: DNSRecord[];
+  private questions: Question[] = [];
+  private answers: DNSRecord[] = [];
 
-  constructor(queryData?: Buffer) {
-    if (queryData) {
-      this.packetId = queryData.readUInt16BE(0);
-      this.queryResponse = true;
-      const flags = queryData.readUInt16BE(2);
+  constructor(data?: Buffer) {
+    if (data) {
+      this.packetId = data.readUInt16BE(0);
+      const flags = data.readUInt16BE(2);
+      this.queryResponse = Boolean(flags & 0x8000);
       this.opCode = (flags >> 11) & 0xF;
+      this.authoritativeAnswer = Boolean(flags & 0x0400);
+      this.truncation = Boolean(flags & 0x0200);
       this.recursionDesired = Boolean(flags & 0x0100);
+      this.recursionAvailable = Boolean(flags & 0x0080);
+      this.responseCode = flags & 0x000F;
       
-      // Handle all opcodes
-      if (this.opCode === 0) { // Standard QUERY
-        this.responseCode = 0; // No error
-        this.records = parseQuestionSection(queryData, 12).map((question) => ({
-          ...question,
-          ttl: 60,
-          data: '8.8.8.8',
-        }));
-      } else {
-        this.responseCode = 4; // NOTIMP for all non-standard opcodes
-        this.records = [];
+      const questionCount = data.readUInt16BE(4);
+      const answerCount = data.readUInt16BE(6);
+      
+      let offset = 12;
+      for (let i = 0; i < questionCount; i++) {
+        const [question, newOffset] = this.parseQuestion(data, offset);
+        this.questions.push(question);
+        offset = newOffset;
+      }
+      
+      for (let i = 0; i < answerCount; i++) {
+        const [answer, newOffset] = this.parseAnswer(data, offset);
+        this.answers.push(answer);
+        offset = newOffset;
       }
     } else {
-      throw new Error('DNSMessage question mode not implemented');
+      this.packetId = 0;
+      this.queryResponse = false;
+      this.opCode = 0;
+      this.recursionDesired = false;
     }
   }
 
-  static fromBuffer(buffer: Buffer): DNSMessage {
-    const message = new DNSMessage();
-    message.packetId = buffer.readUInt16BE(0);
-    const flags = buffer.readUInt16BE(2);
-    message.queryResponse = Boolean(flags & 0x8000);
-    message.opCode = (flags >> 11) & 0xF;
-    message.authoritativeAnswer = Boolean(flags & 0x0400);
-    message.truncation = Boolean(flags & 0x0200);
-    message.recursionDesired = Boolean(flags & 0x0100);
-    message.recursionAvailable = Boolean(flags & 0x0080);
-    message.responseCode = flags & 0x000F;
-    message.records = parseQuestionSection(buffer, 12);
-    return message;
+  private parseQuestion(data: Buffer, offset: number): [Question, number] {
+    const { name, byteLength } = parseDomainName(data, offset);
+    offset += byteLength;
+    const qType = data.readUInt16BE(offset);
+    offset += 2;
+    const qClass = data.readUInt16BE(offset);
+    offset += 2;
+    return [{ domain: name, qType, qClass }, offset];
+  }
+
+  private parseAnswer(data: Buffer, offset: number): [DNSRecord, number] {
+    const { name, byteLength } = parseDomainName(data, offset);
+    offset += byteLength;
+    const qType = data.readUInt16BE(offset);
+    offset += 2;
+    const qClass = data.readUInt16BE(offset);
+    offset += 2;
+    const ttl = data.readUInt32BE(offset);
+    offset += 4;
+    const dataLength = data.readUInt16BE(offset);
+    offset += 2;
+    const recordData = data.slice(offset, offset + dataLength).toString('utf-8');
+    offset += dataLength;
+    return [{ domain: name, qType, qClass, ttl, data: recordData }, offset];
   }
 
   toBuffer(): Buffer {
@@ -192,8 +214,8 @@ class DNSMessage {
     flags |= this.responseCode & 0x000F;
     
     header.writeUInt16BE(flags, 2);
-    header.writeUInt16BE(this.records.length, 4); // QDCOUNT
-    header.writeUInt16BE(this.opCode === 1 || this.opCode === 2 ? 0 : this.records.length, 6); // ANCOUNT
+    header.writeUInt16BE(this.questions.length, 4); // QDCOUNT
+    header.writeUInt16BE(this.answers.length, 6); // ANCOUNT
     header.writeUInt16BE(0, 8); // NSCOUNT
     header.writeUInt16BE(0, 10); // ARCOUNT
 
@@ -201,11 +223,16 @@ class DNSMessage {
   }
 
   private getQuestionSection(): Buffer {
-    return Buffer.concat(this.records.map(recordToQuestion));
+    return Buffer.concat(this.questions.map(recordToQuestion));
   }
 
   private getAnswerSection(): Buffer {
-    return this.opCode === 1 || this.opCode === 2 ? Buffer.alloc(0) : Buffer.concat(this.records.map(recordToAnswer));
+    return Buffer.concat(this.answers.map(recordToAnswer));
+  }
+
+  setAnswers(answers: DNSRecord[]) {
+    this.answers = answers;
+    this.queryResponse = true;
   }
 }
 
@@ -269,16 +296,17 @@ class DNS {
 
 udpSocket.on('message', async (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
   try {
-    const dnsMessage = DNSMessage.fromBuffer(data);
+    const query = new DNSMessage(data);
     const forwardedResponse = await forwardDNSQuery(data);
     const response = new DNSMessage(forwardedResponse);
-    response.packetId = dnsMessage.packetId;
+    response.packetId = query.packetId;
     const responseBuffer = response.toBuffer();
     udpSocket.send(responseBuffer, remoteAddr.port, remoteAddr.address);
   } catch (e) {
-    console.log(`Error processing or sending data: ${e}`);
+    console.error(`Error processing or sending data: ${e}`);
   }
 });
+
 udpSocket.bind(PORT, '127.0.0.1', () => {
     console.log(`[${new Date().toISOString()}] Socket bound to 127.0.0.1:${PORT}`);
 });
