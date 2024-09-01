@@ -133,9 +133,9 @@ class DNSMessage {
       this.opCode = (flags >> 11) & 0xF;
       this.recursionDesired = Boolean(flags & 0x0100);
       
-      // Set response code based on opCode
-      if (this.opCode === 1) { // IQUERY
-        this.responseCode = 4; // Not Implemented
+      // Handle IQUERY and STATUS opcodes
+      if (this.opCode === 1 || this.opCode === 2) { // IQUERY or STATUS
+        this.responseCode = 4; // NOTIMP
         this.records = [];
       } else {
         this.responseCode = 0; // No error
@@ -173,7 +173,7 @@ class DNSMessage {
     
     header.writeUInt16BE(flags, 2);
     header.writeUInt16BE(this.records.length, 4); // QDCOUNT
-    header.writeUInt16BE(this.opCode === 1 ? 0 : this.records.length, 6); // ANCOUNT
+    header.writeUInt16BE(this.opCode === 1 || this.opCode === 2 ? 0 : this.records.length, 6); // ANCOUNT
     header.writeUInt16BE(0, 8); // NSCOUNT
     header.writeUInt16BE(0, 10); // ARCOUNT
 
