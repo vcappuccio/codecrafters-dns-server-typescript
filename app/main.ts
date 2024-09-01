@@ -31,7 +31,7 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         header.writeUInt16BE(1234, 0); // ID
         header.writeUInt16BE(0x8180, 2); // Flags
         header.writeUInt16BE(1, 4); // QDCOUNT
-        header.writeUInt16BE(0, 6); // ANCOUNT
+        header.writeUInt16BE(1, 6); // ANCOUNT
         header.writeUInt16BE(0, 8); // NSCOUNT
         header.writeUInt16BE(0, 10); // ARCOUNT
 
@@ -41,7 +41,23 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             0x00, 0x01  // Class: IN
         ]);
 
-        const response = Buffer.concat([header, question]);
+        const answer = Buffer.alloc(16);
+        answer.writeUInt16BE(0x0c63, 0); // Name: codecrafters.io
+        answer.writeUInt16BE(0x6f64, 2);
+        answer.writeUInt16BE(0x6563, 4);
+        answer.writeUInt16BE(0x7261, 6);
+        answer.writeUInt16BE(0x6674, 8);
+        answer.writeUInt16BE(0x6572, 10);
+        answer.writeUInt16BE(0x7302, 12);
+        answer.writeUInt16BE(0x696f, 14);
+        answer.writeUInt8(0x00, 16);
+        answer.writeUInt16BE(1, 17); // Type: A
+        answer.writeUInt16BE(1, 19); // Class: IN
+        answer.writeUInt32BE(60, 21); // TTL
+        answer.writeUInt16BE(4, 25); // Length
+        answer.writeUInt32BE(0x08080808, 27); // Data: 8.8.8.8
+
+        const response = Buffer.concat([header, question, answer]);
 
         udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
