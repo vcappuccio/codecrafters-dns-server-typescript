@@ -7,6 +7,10 @@ const resolverAddress = (argv[2] || "8.8.8.8:53").split(":");
 const resolverIP = resolverAddress[0];
 const resolverPort = parseInt(resolverAddress[1], 10);
 
+if (isNaN(resolverPort) || resolverPort < 0 || resolverPort > 65535) {
+    throw new Error(`Invalid Port: ${resolverPort}. Ports must be >= 0 and <= 65535.`);
+}
+
 console.log(`[${new Date().toISOString()}] Socket created`);
 
 udpSocket.bind(PORT, "127.0.0.1", () => {
@@ -27,6 +31,7 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         resolverSocket.send(data, resolverPort, resolverIP, (err) => {
             if (err) {
                 console.log(`[${new Date().toISOString()}] Error forwarding data: ${err}`);
+                resolverSocket.close(); // Close socket on error
             } else {
                 console.log(`[${new Date().toISOString()}] Data forwarded to resolver at ${resolverIP}:${resolverPort}`);
             }
