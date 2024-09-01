@@ -5,7 +5,7 @@ const PORT = 2053;
 const udpSocket: dgram.Socket = dgram.createSocket("udp4");
 const resolverAddress = (argv[2] || "8.8.8.8:53").split(":");
 const resolverIP = resolverAddress[0];
-const resolverPort = parseInt(resolverAddress[1], 10);
+const resolverPort = resolverAddress[1] ? parseInt(resolverAddress[1], 10) : 53;
 
 if (isNaN(resolverPort) || resolverPort < 0 || resolverPort > 65535) {
     throw new Error(`Invalid Port: ${resolverPort}. Ports must be >= 0 and <= 65535.`);
