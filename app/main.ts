@@ -4,6 +4,11 @@ import { argv } from 'process';
 const PORT = 2053;
 const udpSocket: dgram.Socket = dgram.createSocket('udp4');
 
+// Add resolver configuration
+const [, , , resolverArg] = argv;
+const [resolverIp, resolverPort] = resolverArg.split(':');
+const RESOLVER_PORT = parseInt(resolverPort, 10);
+
 type Question = {
   domain: string;
   qType: number;
@@ -150,6 +155,21 @@ class DNSMessage {
     }
   }
 
+  static fromBuffer(buffer: Buffer): DNSMessage {
+    const message = new DNSMessage();
+    message.packetId = buffer.readUInt16BE(0);
+    const flags = buffer.readUInt16BE(2);
+    message.queryResponse = Boolean(flags & 0x8000);
+    message.opCode = (flags >> 11) & 0xF;
+    message.authoritativeAnswer = Boolean(flags & 0x0400);
+    message.truncation = Boolean(flags & 0x0200);
+    message.recursionDesired = Boolean(flags & 0x0100);
+    message.recursionAvailable = Boolean(flags & 0x0080);
+    message.responseCode = flags & 0x000F;
+    message.records = parseQuestionSection(buffer, 12);
+    return message;
+  }
+
   toBuffer(): Buffer {
     const header = this.getHeader();
     const questions = this.getQuestionSection();
@@ -189,6 +209,29 @@ class DNSMessage {
   }
 }
 
+// Add a function to forward DNS query
+function forwardDNSQuery(query: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const client = dgram.createSocket('udp4');
+    client.send(query, RESOLVER_PORT, resolverIp, (err) => {
+      if (err) {
+        client.close();
+        reject(err);
+      }
+    });
+
+    client.on('message', (msg) => {
+      client.close();
+      resolve(msg);
+    });
+
+    client.on('error', (err) => {
+      client.close();
+      reject(err);
+    });
+  });
+}
+
 class DNS {
   parseQuestion(data: Buffer, startOffset: number): [string, number] {
     let labels: string[] = [];
@@ -224,11 +267,14 @@ class DNS {
   }
 }
 
-udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
+udpSocket.on('message', async (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
   try {
-    const dnsMessage = new DNSMessage(data);
-    const response = dnsMessage.toBuffer();
-    udpSocket.send(response, remoteAddr.port, remoteAddr.address);
+    const dnsMessage = DNSMessage.fromBuffer(data);
+    const forwardedResponse = await forwardDNSQuery(data);
+    const response = new DNSMessage(forwardedResponse);
+    response.packetId = dnsMessage.packetId;
+    const responseBuffer = response.toBuffer();
+    udpSocket.send(responseBuffer, remoteAddr.port, remoteAddr.address);
   } catch (e) {
     console.log(`Error processing or sending data: ${e}`);
   }
