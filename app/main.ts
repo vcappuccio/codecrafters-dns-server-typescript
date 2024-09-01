@@ -185,7 +185,7 @@ class DNSMessage {
   }
 
   private getAnswerSection(): Buffer {
-    return this.opCode === 1 ? Buffer.alloc(0) : Buffer.concat(this.records.map(recordToAnswer));
+    return this.opCode === 1 || this.opCode === 2 ? Buffer.alloc(0) : Buffer.concat(this.records.map(recordToAnswer));
   }
 }
 
