@@ -1,6 +1,6 @@
 import * as dgram from "dgram";
 
-const PORT = 12053;
+const PORT = 2053 ;
 const udpSocket: dgram.Socket = dgram.createSocket("udp4");
 console.log(`[${new Date().toISOString()}] Socket created`);
 
