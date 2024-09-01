@@ -49,6 +49,11 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             resolverSocket.close();
         });
 
+        resolverSocket.on("error", (err) => {
+            console.log(`[${new Date().toISOString()}] Resolver socket error: ${err}`);
+            resolverSocket.close();
+        });
+
     } catch (e) {
         console.log(`[${new Date().toISOString()}] Error processing message: ${e}`);
     }
