@@ -90,12 +90,28 @@ function parseDomainName(buffer: Buffer, offset: number): { name: string; byteLe
   return { name: labels.join('.'), byteLength };
 }
 
-function recordToQuestion(record: DNSRecord) {
-  // ... function body ...
+function recordToQuestion(record: DNSRecord): Buffer {
+  const domainParts = record.domain.split('.');
+  const domainBuffer = Buffer.concat(
+    domainParts.map(part => Buffer.concat([Buffer.from([part.length]), Buffer.from(part)]))
+  );
+  const endDomain = Buffer.from([0]);
+  const typeAndClass = Buffer.alloc(4);
+  typeAndClass.writeUInt16BE(record.qType, 0);
+  typeAndClass.writeUInt16BE(record.qClass, 2);
+  
+  return Buffer.concat([domainBuffer, endDomain, typeAndClass]);
 }
 
-function recordToAnswer(record: DNSRecord) {
-  // ... function body ...
+function recordToAnswer(record: DNSRecord): Buffer {
+  const question = recordToQuestion(record);
+  const ttlAndLength = Buffer.alloc(6);
+  ttlAndLength.writeUInt32BE(record.ttl, 0);
+  const ipParts = record.data.split('.').map(Number);
+  const ipBuffer = Buffer.from(ipParts);
+  ttlAndLength.writeUInt16BE(ipBuffer.length, 4);
+  
+  return Buffer.concat([question, ttlAndLength, ipBuffer]);
 }
 
 class DNSMessage {
