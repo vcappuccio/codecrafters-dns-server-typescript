@@ -33,10 +33,7 @@ class DNSMessage {
 
   constructor(data?: Buffer) {
     if (data) {
-      this.packetId = data.readUInt16BE(0);
-      this.flags = data.readUInt16BE(2);
-      this.opcode = (this.flags >> 11) & 0xF;
-      // ... parse other fields ...
+      this.parse(data);
     }
   }
 
@@ -194,26 +191,26 @@ async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   response.opcode = query.opcode;
   response.questions = query.questions;
 
-  switch (query.opcode) {
-    case 0: // QUERY
-      for (const question of query.questions) {
-        const singleQuestionQuery = new DNSMessage();
-        singleQuestionQuery.packetId = query.packetId;
-        singleQuestionQuery.flags = query.flags;
-        singleQuestionQuery.opcode = query.opcode;
-        singleQuestionQuery.questions = [question];
-
-        const forwardedResponse = await forwardDNSQuery(singleQuestionQuery.toBuffer());
-        const parsedResponse = new DNSMessage(forwardedResponse);
-
-        response.answers.push(...parsedResponse.answers);
-      }
-      break;
-    case 1: // IQUERY
-    case 2: // STATUS
-    default: // Unknown opcodes
-      response.setRcode(4); // Not Implemented
-      break;
+  if (query.opcode === 0) { // QUERY
+    if (query.questions.length > 1) {
+      // Handle multiple questions
+      const responses = await Promise.all(query.questions.map(async (q) => {
+        const singleQuery = new DNSMessage();
+        singleQuery.packetId = query.packetId;
+        singleQuery.flags = query.flags;
+        singleQuery.opcode = query.opcode;
+        singleQuery.questions = [q];
+        const forwardedResponse = await forwardDNSQuery(singleQuery.toBuffer());
+        return new DNSMessage(forwardedResponse);
+      }));
+      response.answers = responses.flatMap(r => r.answers);
+    } else {
+      const forwardedResponse = await forwardDNSQuery(query.toBuffer());
+      const parsedResponse = new DNSMessage(forwardedResponse);
+      response.answers = parsedResponse.answers;
+    }
+  } else {
+    response.setRcode(4); // Not Implemented
   }
 
   return response;
@@ -236,6 +233,6 @@ udpSocket.on('message', async (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
   }
 });
 
-udpSocket.bind(PORT, '127.0.0.1', () => {
-    console.log(`[${new Date().toISOString()}] Socket bound to 127.0.0.1:${PORT}`);
+udpSocket.bind(PORT, () => {
+    console.log(`[${new Date().toISOString()}] Socket bound to 0.0.0.0:${PORT}`);
 });
