@@ -188,6 +188,11 @@ async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   response.opcode = query.opcode; // Preserve the original OPCODE
   response.questions = query.questions;
 
+  if (query.opcode === 1) { // IQUERY
+    response.flags = 0x8184; // Response + Not Implemented
+    return response;
+  }
+
   for (const question of query.questions) {
     const singleQuestionQuery = new DNSMessage();
     singleQuestionQuery.packetId = query.packetId;
