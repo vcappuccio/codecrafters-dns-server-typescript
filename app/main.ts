@@ -27,6 +27,10 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         console.log(`[${new Date().toISOString()}] Received data from ${remoteAddr.address}:${remoteAddr.port}`);
         console.log(`[${new Date().toISOString()}] Data: ${data.toString('hex')}`);
 
+        if (data.length < 12) {
+            throw new Error("Invalid DNS message: too short");
+        }
+
         const id = data.readUInt16BE(0);
         const flags = data.readUInt16BE(2);
         const opcode = (flags >> 11) & 0x0F;
