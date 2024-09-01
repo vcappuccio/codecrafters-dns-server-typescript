@@ -133,17 +133,17 @@ class DNSMessage {
       this.opCode = (flags >> 11) & 0xF;
       this.recursionDesired = Boolean(flags & 0x0100);
       
-      // Handle IQUERY and STATUS opcodes
-      if (this.opCode === 1 || this.opCode === 2) { // IQUERY or STATUS
-        this.responseCode = 4; // NOTIMP
-        this.records = [];
-      } else {
+      // Handle all opcodes
+      if (this.opCode === 0) { // Standard QUERY
         this.responseCode = 0; // No error
         this.records = parseQuestionSection(queryData, 12).map((question) => ({
           ...question,
           ttl: 60,
           data: '8.8.8.8',
         }));
+      } else {
+        this.responseCode = 4; // NOTIMP for all non-standard opcodes
+        this.records = [];
       }
     } else {
       throw new Error('DNSMessage question mode not implemented');
