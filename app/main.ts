@@ -42,7 +42,7 @@ class DNSMessage {
     this.packetId = data.readUInt16BE(offset);
     offset += 2;
     this.flags = data.readUInt16BE(offset);
-    this.opcode = (this.flags >> 11) & 0xF; // Extract OPCODE from flags
+    this.opcode = (this.flags >> 11) & 0xF;
     offset += 2;
     const qdcount = data.readUInt16BE(offset);
     offset += 2;
@@ -62,6 +62,54 @@ class DNSMessage {
       this.answers.push(answer);
       offset = newOffset;
     }
+  }
+
+  private parseQuestion(data: Buffer, offset: number): [Question, number] {
+    const [name, newOffset] = this.parseName(data, offset);
+    const qtype = data.readUInt16BE(newOffset);
+    const qclass = data.readUInt16BE(newOffset + 2);
+    return [{ name, qtype, qclass }, newOffset + 4];
+  }
+
+  private parseAnswer(data: Buffer, offset: number): [DNSRecord, number] {
+    const [name, newOffset] = this.parseName(data, offset);
+    const type = data.readUInt16BE(newOffset);
+    const cls = data.readUInt16BE(newOffset + 2);
+    const ttl = data.readUInt32BE(newOffset + 4);
+    const rdlength = data.readUInt16BE(newOffset + 8);
+    const rdata = data.slice(newOffset + 10, newOffset + 10 + rdlength);
+    return [{ name, type, cls, ttl, rdlength, rdata }, newOffset + 10 + rdlength];
+  }
+
+  private parseName(data: Buffer, offset: number): [string, number] {
+    const labels: string[] = [];
+    let currentOffset = offset;
+    let jumping = false;
+    let jumpOffset = -1;
+
+    while (true) {
+      const length = data[currentOffset];
+
+      if (length === 0) {
+        if (!jumping) currentOffset++;
+        break;
+      }
+
+      if ((length & 0xc0) === 0xc0) {
+        if (!jumping) {
+          jumpOffset = currentOffset + 2;
+        }
+        const pointerOffset = ((length & 0x3f) << 8) | data[currentOffset + 1];
+        currentOffset = pointerOffset;
+        jumping = true;
+      } else {
+        currentOffset++;
+        labels.push(data.slice(currentOffset, currentOffset + length).toString('ascii'));
+        currentOffset += length;
+      }
+    }
+
+    return [labels.join('.'), jumping ? jumpOffset : currentOffset];
   }
 
   toBuffer(): Buffer {
