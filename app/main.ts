@@ -156,6 +156,10 @@ class DNSMessage {
     });
     return Buffer.concat([...buffers, Buffer.from([0])]);
   }
+
+  setRcode(rcode: number): void {
+    this.flags = (this.flags & 0xFFF0) | (rcode & 0x0F);
+  }
 }
 
 // Add a function to forward DNS query
@@ -188,8 +192,9 @@ async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   response.opcode = query.opcode; // Preserve the original OPCODE
   response.questions = query.questions;
 
-  if (query.opcode === 1) { // IQUERY
-    response.flags = 0x8184; // Response + Not Implemented
+  if (query.opcode === 1 || query.opcode === 2) { // IQUERY or STATUS
+    response.flags = 0x8180; // Response
+    response.setRcode(4); // Not Implemented
     return response;
   }
 
