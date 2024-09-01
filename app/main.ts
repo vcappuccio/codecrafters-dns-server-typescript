@@ -132,3 +132,54 @@ setInterval(() => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] Server is running...`);
 }, 5000);
+
+function parseDomainName(buffer: Buffer, offset: number): { name: string, newOffset: number } {
+    const labels: string[] = [];
+    let currentOffset = offset;
+    
+    while (true) {
+        const length = buffer[currentOffset];
+        
+        if (length === 0) {
+            currentOffset++;
+            break;
+        }
+        
+        if ((length & 0xc0) === 0xc0) {
+            // This is a pointer
+            const pointerOffset = ((length & 0x3f) << 8) | buffer[currentOffset + 1];
+            const { name } = parseDomainName(buffer, pointerOffset);
+            labels.push(name);
+            currentOffset += 2;
+            break;
+        }
+        
+        const label = buffer.slice(currentOffset + 1, currentOffset + 1 + length).toString();
+        labels.push(label);
+        currentOffset += length + 1;
+    }
+    
+    return { name: labels.join('.'), newOffset: currentOffset };
+}
+
+function compressDomainName(name: string, buffer: Buffer, offset: number, nameOffsets: Map<string, number>): number {
+    const labels = name.split('.');
+    let currentOffset = offset;
+
+    for (const label of labels) {
+        const fullName = labels.slice(labels.indexOf(label)).join('.');
+        if (nameOffsets.has(fullName)) {
+            const pointer = nameOffsets.get(fullName)! | 0xc000;
+            buffer.writeUInt16BE(pointer, currentOffset);
+            return currentOffset + 2;
+        }
+
+        nameOffsets.set(fullName, currentOffset);
+        buffer.writeUInt8(label.length, currentOffset);
+        buffer.write(label, currentOffset + 1);
+        currentOffset += label.length + 1;
+    }
+
+    buffer.writeUInt8(0, currentOffset);
+    return currentOffset + 1;
+}
