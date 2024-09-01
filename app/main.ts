@@ -188,12 +188,31 @@ function forwardDNSQuery(query: Buffer): Promise<Buffer> {
   });
 }
 
+async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
+  const response = new DNSMessage();
+  response.packetId = query.packetId;
+  response.flags = 0x8180; // Standard query response, no error
+  response.questions = query.questions;
+
+  for (const question of query.questions) {
+    const singleQuestionQuery = new DNSMessage();
+    singleQuestionQuery.packetId = query.packetId;
+    singleQuestionQuery.flags = query.flags;
+    singleQuestionQuery.questions = [question];
+
+    const forwardedResponse = await forwardDNSQuery(singleQuestionQuery.toBuffer());
+    const parsedResponse = new DNSMessage(forwardedResponse);
+
+    response.answers.push(...parsedResponse.answers);
+  }
+
+  return response;
+}
+
 udpSocket.on('message', async (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
   try {
     const query = new DNSMessage(data);
-    const forwardedResponse = await forwardDNSQuery(data);
-    const response = new DNSMessage(forwardedResponse);
-    response.packetId = query.packetId;
+    const response = await handleDNSQuery(query);
     const responseBuffer = response.toBuffer();
     udpSocket.send(responseBuffer, remoteAddr.port, remoteAddr.address);
   } catch (e) {
