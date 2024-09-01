@@ -187,30 +187,24 @@ function forwardDNSQuery(query: Buffer): Promise<Buffer> {
 async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   const response = new DNSMessage();
   response.packetId = query.packetId;
-  response.flags = 0x8180; // QR bit set (response) + RD + RA
   response.opcode = query.opcode;
   response.questions = query.questions;
 
-  if (query.opcode === 0) { // QUERY
-    if (query.questions.length > 1) {
-      // Handle multiple questions
-      const responses = await Promise.all(query.questions.map(async (q) => {
-        const singleQuery = new DNSMessage();
-        singleQuery.packetId = query.packetId;
-        singleQuery.flags = query.flags;
-        singleQuery.opcode = query.opcode;
-        singleQuery.questions = [q];
-        const forwardedResponse = await forwardDNSQuery(singleQuery.toBuffer());
-        return new DNSMessage(forwardedResponse);
-      }));
-      response.answers = responses.flatMap(r => r.answers);
-    } else {
+  switch (query.opcode) {
+    case 0: // QUERY
+      response.flags = 0x8180; // QR bit set (response) + RD + RA
       const forwardedResponse = await forwardDNSQuery(query.toBuffer());
       const parsedResponse = new DNSMessage(forwardedResponse);
       response.answers = parsedResponse.answers;
-    }
-  } else {
-    response.setRcode(4); // Not Implemented
+      break;
+    case 1: // IQUERY
+      response.flags = 0x8084; // QR bit set (response) + NOTIMP
+      response.setRcode(4); // Not Implemented
+      break;
+    default:
+      response.flags = 0x8084; // QR bit set (response) + NOTIMP
+      response.setRcode(4); // Not Implemented
+      break;
   }
 
   return response;
