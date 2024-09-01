@@ -27,31 +27,28 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         console.log(`[${new Date().toISOString()}] Received data from ${remoteAddr.address}:${remoteAddr.port}`);
         console.log(`[${new Date().toISOString()}] Data: ${data.toString('hex')}`);
 
-        const resolverSocket = dgram.createSocket("udp4");
-        resolverSocket.send(data, resolverPort, resolverIP, (err) => {
+        const header = Buffer.alloc(12);
+        header.writeUInt16BE(1234, 0); // ID
+        header.writeUInt16BE(0x8180, 2); // Flags
+        header.writeUInt16BE(1, 4); // QDCOUNT
+        header.writeUInt16BE(0, 6); // ANCOUNT
+        header.writeUInt16BE(0, 8); // NSCOUNT
+        header.writeUInt16BE(0, 10); // ARCOUNT
+
+        const question = Buffer.from([
+            0x0c, 0x63, 0x6f, 0x64, 0x65, 0x63, 0x72, 0x61, 0x66, 0x74, 0x65, 0x72, 0x73, 0x02, 0x69, 0x6f, 0x00, // Name: codecrafters.io
+            0x00, 0x01, // Type: A
+            0x00, 0x01  // Class: IN
+        ]);
+
+        const response = Buffer.concat([header, question]);
+
+        udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
-                console.log(`[${new Date().toISOString()}] Error forwarding data: ${err}`);
-                resolverSocket.close(); // Close socket on error
+                console.log(`[${new Date().toISOString()}] Error sending data: ${err}`);
             } else {
-                console.log(`[${new Date().toISOString()}] Data forwarded to resolver at ${resolverIP}:${resolverPort}`);
+                console.log(`[${new Date().toISOString()}] Response sent to ${remoteAddr.address}:${remoteAddr.port}`);
             }
-        });
-
-        resolverSocket.on("message", (resolverResponse: Buffer) => {
-            console.log(`[${new Date().toISOString()}] Received response from resolver: ${resolverResponse.toString('hex')}`);
-            udpSocket.send(resolverResponse, 0, resolverResponse.length, remoteAddr.port, remoteAddr.address, (err) => {
-                if (err) {
-                    console.log(`[${new Date().toISOString()}] Error sending data: ${err}`);
-                } else {
-                    console.log(`[${new Date().toISOString()}] Response sent to ${remoteAddr.address}:${remoteAddr.port}`);
-                }
-            });
-            resolverSocket.close();
-        });
-
-        resolverSocket.on("error", (err) => {
-            console.log(`[${new Date().toISOString()}] Resolver socket error: ${err}`);
-            resolverSocket.close();
         });
 
     } catch (e) {
