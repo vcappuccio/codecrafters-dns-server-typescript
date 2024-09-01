@@ -33,7 +33,10 @@ class DNSMessage {
 
   constructor(data?: Buffer) {
     if (data) {
-      this.parse(data);
+      this.packetId = data.readUInt16BE(0);
+      this.flags = data.readUInt16BE(2);
+      this.opcode = (this.flags >> 11) & 0xF;
+      // ... parse other fields ...
     }
   }
 
@@ -188,12 +191,14 @@ function forwardDNSQuery(query: Buffer): Promise<Buffer> {
 async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   const response = new DNSMessage();
   response.packetId = query.packetId;
-  response.flags = 0x8180; // Standard query response, no error
-  response.opcode = query.opcode; // Preserve the original OPCODE
+  response.flags = 0x8000; // QR bit set (response)
+  response.flags |= query.flags & 0x0100; // Preserve RD bit from query
+  response.opcode = query.opcode;
   response.questions = query.questions;
 
   switch (query.opcode) {
     case 0: // QUERY
+      response.flags |= 0x0080; // RA bit set (recursion available)
       for (const question of query.questions) {
         const singleQuestionQuery = new DNSMessage();
         singleQuestionQuery.packetId = query.packetId;
