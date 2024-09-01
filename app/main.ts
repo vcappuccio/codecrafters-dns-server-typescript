@@ -69,8 +69,9 @@ function parseDomainName(buffer: Buffer, offset: number): { name: string; byteLe
   const labels: string[] = [];
   let i = offset;
   let byteLength = 0;
+  const maxLength = buffer.length;
 
-  while (true) {
+  while (i < maxLength) {
     const length = buffer[i];
 
     if (length === 0) {
@@ -79,6 +80,9 @@ function parseDomainName(buffer: Buffer, offset: number): { name: string; byteLe
     }
 
     if ((length & 0xc0) === 0xc0) {
+      if (i + 1 >= maxLength) {
+        throw new Error("Buffer overflow while parsing compressed domain name");
+      }
       const pointerOffset = ((length & 0x3f) << 8) | buffer[i + 1];
       const pointerResult = parseDomainName(buffer, pointerOffset);
       labels.push(...pointerResult.name.split('.'));
@@ -88,6 +92,11 @@ function parseDomainName(buffer: Buffer, offset: number): { name: string; byteLe
 
     i++;
     byteLength += length + 1;
+
+    if (i + length > maxLength) {
+      throw new Error("Buffer overflow while parsing domain name");
+    }
+
     labels.push(buffer.slice(i, i + length).toString('ascii'));
     i += length;
   }
@@ -169,6 +178,11 @@ class DNSMessage {
   private parseQuestion(data: Buffer, offset: number): [Question, number] {
     const { name, byteLength } = parseDomainName(data, offset);
     offset += byteLength;
+    
+    if (offset + 4 > data.length) {
+      throw new Error("Buffer overflow while parsing question");
+    }
+    
     const qType = data.readUInt16BE(offset);
     offset += 2;
     const qClass = data.readUInt16BE(offset);
@@ -179,6 +193,11 @@ class DNSMessage {
   private parseAnswer(data: Buffer, offset: number): [DNSRecord, number] {
     const { name, byteLength } = parseDomainName(data, offset);
     offset += byteLength;
+    
+    if (offset + 10 > data.length) {
+      throw new Error("Buffer overflow while parsing answer");
+    }
+    
     const qType = data.readUInt16BE(offset);
     offset += 2;
     const qClass = data.readUInt16BE(offset);
@@ -187,6 +206,11 @@ class DNSMessage {
     offset += 4;
     const dataLength = data.readUInt16BE(offset);
     offset += 2;
+    
+    if (offset + dataLength > data.length) {
+      throw new Error("Buffer overflow while parsing answer data");
+    }
+    
     const recordData = data.slice(offset, offset + dataLength).toString('utf-8');
     offset += dataLength;
     return [{ domain: name, qType, qClass, ttl, data: recordData }, offset];
@@ -304,6 +328,13 @@ udpSocket.on('message', async (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     udpSocket.send(responseBuffer, remoteAddr.port, remoteAddr.address);
   } catch (e) {
     console.error(`Error processing or sending data: ${e}`);
+    // Send an error response to the client
+    const errorResponse = new DNSMessage();
+    errorResponse.packetId = data.readUInt16BE(0); // Use the original query ID
+    errorResponse.queryResponse = true;
+    errorResponse.responseCode = 2; // Server failure
+    const errorBuffer = errorResponse.toBuffer();
+    udpSocket.send(errorBuffer, remoteAddr.port, remoteAddr.address);
   }
 });
 
