@@ -37,52 +37,57 @@ function followOffsets({
   }
 }
 
-function parseQuestionSection(questionSection: Buffer, offset: number) {
+function parseQuestionSection(questionSection: Buffer, offset: number): Question[] {
   let i = offset;
-  let labelOffsetMap: Record<number, Label> = {};
   const questions: Question[] = [];
-  while (i < questionSection.byteLength) {
-    const labels: Label[] = [];
-    let previousLabel: Label | undefined = undefined;
-    while (true) {
-      const firstTwoBits = questionSection[i] >> 6;
-      if (firstTwoBits === 0b11) {
-        const offset =
-          ((questionSection[i] & 0b00111111) << 8) | questionSection[i + 1];
-        followOffsets({
-          labels,
-          labelOffsetMap,
-          offset,
-        });
-        i += 2;
-        break;
-      }
-      const length = questionSection.readUInt8(i);
-      i += 1;
-      const label = {
-        offset: i,
-        content: questionSection.subarray(i, i + length).toString(),
-      };
-      labels.push(label);
-      labelOffsetMap[i] = label;
-      if (previousLabel) {
-        previousLabel.next = label;
-      }
-      previousLabel = label;
-      i += length;
-      if (questionSection[i] === 0x00) {
-        i += 1;
-        break;
-      }
+  
+  while (i < questionSection.length) {
+    const domain = parseDomainName(questionSection, i);
+    i += domain.byteLength;
+    
+    if (i + 4 > questionSection.length) {
+      break;
     }
-    const domain = labels.map(({ content }) => content).join('.');
+    
     const qType = questionSection.readUInt16BE(i);
     i += 2;
     const qClass = questionSection.readUInt16BE(i);
     i += 2;
-    questions.push({ domain, qType, qClass });
+    
+    questions.push({ domain: domain.name, qType, qClass });
   }
+  
   return questions;
+}
+
+function parseDomainName(buffer: Buffer, offset: number): { name: string; byteLength: number } {
+  const labels: string[] = [];
+  let i = offset;
+  let byteLength = 0;
+
+  while (true) {
+    const length = buffer[i];
+
+    if (length === 0) {
+      byteLength++;
+      break;
+    }
+
+    if ((length & 0xc0) === 0xc0) {
+      const pointerOffset = ((length & 0x3f) << 8) | buffer[i + 1];
+      const pointerResult = parseDomainName(buffer, pointerOffset);
+      labels.push(...pointerResult.name.split('.'));
+      byteLength += 2;
+      break;
+    }
+
+    i++;
+    byteLength += length + 1;
+    labels.push(buffer.slice(i, i + length).toString('ascii'));
+    i += length;
+  }
+
+  return { name: labels.join('.'), byteLength };
 }
 
 function recordToQuestion(record: DNSRecord) {
