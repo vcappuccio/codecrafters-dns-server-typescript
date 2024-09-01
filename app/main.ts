@@ -41,7 +41,17 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         header.writeUInt16BE(0, 8); // NSCOUNT
         header.writeUInt16BE(0, 10); // ARCOUNT
 
-        const response = Buffer.concat([header]);
+        const question = Buffer.from("\x0ccodecrafters\x02io\x00\x00\x01\x00\x01", "binary");
+
+        const answer = Buffer.concat([
+            Buffer.from("\x0ccodecrafters\x02io\x00", "binary"), // Name
+            Buffer.from("\x00\x01\x00\x01", "binary"), // Type and Class
+            Buffer.from([0x00, 0x00, 0x00, 0x3C]), // TTL
+            Buffer.from([0x00, 0x04]), // RDLENGTH
+            Buffer.from("\x08\x08\x08\x08", "binary") // RDATA (IP address)
+        ]);
+
+        const response = Buffer.concat([header, question, answer]);
 
         udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
