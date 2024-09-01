@@ -118,8 +118,7 @@ class DNSMessage {
   toBuffer(): Buffer {
     const headerBuffer = Buffer.alloc(12);
     headerBuffer.writeUInt16BE(this.packetId, 0);
-    const flags = (this.flags & 0xF800) | (this.opcode << 11) | (this.flags & 0x07FF);
-    headerBuffer.writeUInt16BE(flags, 2);
+    headerBuffer.writeUInt16BE(this.flags, 2);
     headerBuffer.writeUInt16BE(this.questions.length, 4);
     headerBuffer.writeUInt16BE(this.answers.length, 6);
     headerBuffer.writeUInt16BE(0, 8); // NSCOUNT
@@ -191,14 +190,12 @@ function forwardDNSQuery(query: Buffer): Promise<Buffer> {
 async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   const response = new DNSMessage();
   response.packetId = query.packetId;
-  response.flags = 0x8000; // QR bit set (response)
-  response.flags |= query.flags & 0x0100; // Preserve RD bit from query
+  response.flags = 0x8180; // QR bit set (response) + RD + RA
   response.opcode = query.opcode;
   response.questions = query.questions;
 
   switch (query.opcode) {
     case 0: // QUERY
-      response.flags |= 0x0080; // RA bit set (recursion available)
       for (const question of query.questions) {
         const singleQuestionQuery = new DNSMessage();
         singleQuestionQuery.packetId = query.packetId;
