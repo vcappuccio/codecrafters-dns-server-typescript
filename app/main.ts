@@ -48,7 +48,7 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         // Parse question section
         let offset = 12;
         const questions = [];
-        for (let i = 0; i < 2; i++) {
+        while (offset < data.length) {
             const labels = [];
             while (data[offset] !== 0) {
                 const length = data[offset];
@@ -63,28 +63,46 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             questions.push({ name, type, qclass });
         }
 
-        // Create a simple answer section
-        const answers = questions.map(question => {
-            const answer = Buffer.alloc(16 + question.name.length + 2);
-            let offset = 0;
+        // Create question section for response
+        const questionSection = Buffer.concat(questions.map(question => {
             const labels = question.name.split('.');
+            const questionBuffer = Buffer.alloc(question.name.length + 6 + labels.length);
+            let offset = 0;
             labels.forEach(label => {
-                answer.writeUInt8(label.length, offset);
+                questionBuffer.writeUInt8(label.length, offset);
                 offset += 1;
-                answer.write(label, offset);
+                questionBuffer.write(label, offset);
                 offset += label.length;
             });
-            answer.writeUInt8(0, offset); // Null byte to end the name
+            questionBuffer.writeUInt8(0, offset); // Null byte to end the name
             offset += 1;
-            answer.writeUInt16BE(1, offset); // Type A
-            answer.writeUInt16BE(1, offset + 2); // Class IN
-            answer.writeUInt32BE(60, offset + 4); // TTL
-            answer.writeUInt16BE(4, offset + 8); // Data length
-            answer.writeUInt32BE(0x08080808, offset + 10); // Address 8.8.8.8
-            return answer;
-        });
+            questionBuffer.writeUInt16BE(question.type, offset); // Type A
+            questionBuffer.writeUInt16BE(question.qclass, offset + 2); // Class IN
+            return questionBuffer;
+        }));
 
-        const response = Buffer.concat([header, ...questions.map(q => Buffer.from(q.name)), ...answers]);
+        // Create answer section
+        const answerSection = Buffer.concat(questions.map(question => {
+            const labels = question.name.split('.');
+            const answerBuffer = Buffer.alloc(question.name.length + 16 + labels.length);
+            let offset = 0;
+            labels.forEach(label => {
+                answerBuffer.writeUInt8(label.length, offset);
+                offset += 1;
+                answerBuffer.write(label, offset);
+                offset += label.length;
+            });
+            answerBuffer.writeUInt8(0, offset); // Null byte to end the name
+            offset += 1;
+            answerBuffer.writeUInt16BE(1, offset); // Type A
+            answerBuffer.writeUInt16BE(1, offset + 2); // Class IN
+            answerBuffer.writeUInt32BE(60, offset + 4); // TTL
+            answerBuffer.writeUInt16BE(4, offset + 8); // Data length
+            answerBuffer.writeUInt32BE(0x08080808, offset + 10); // Address 8.8.8.8
+            return answerBuffer;
+        }));
+
+        const response = Buffer.concat([header, questionSection, answerSection]);
 
         udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
