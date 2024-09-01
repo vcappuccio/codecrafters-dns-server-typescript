@@ -192,23 +192,26 @@ async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   response.opcode = query.opcode; // Preserve the original OPCODE
   response.questions = query.questions;
 
-  if (query.opcode === 1 || query.opcode === 2) { // IQUERY or STATUS
-    response.flags = 0x8180; // Response
-    response.setRcode(4); // Not Implemented
-    return response;
-  }
+  switch (query.opcode) {
+    case 0: // QUERY
+      for (const question of query.questions) {
+        const singleQuestionQuery = new DNSMessage();
+        singleQuestionQuery.packetId = query.packetId;
+        singleQuestionQuery.flags = query.flags;
+        singleQuestionQuery.opcode = query.opcode;
+        singleQuestionQuery.questions = [question];
 
-  for (const question of query.questions) {
-    const singleQuestionQuery = new DNSMessage();
-    singleQuestionQuery.packetId = query.packetId;
-    singleQuestionQuery.flags = query.flags;
-    singleQuestionQuery.opcode = query.opcode;
-    singleQuestionQuery.questions = [question];
+        const forwardedResponse = await forwardDNSQuery(singleQuestionQuery.toBuffer());
+        const parsedResponse = new DNSMessage(forwardedResponse);
 
-    const forwardedResponse = await forwardDNSQuery(singleQuestionQuery.toBuffer());
-    const parsedResponse = new DNSMessage(forwardedResponse);
-
-    response.answers.push(...parsedResponse.answers);
+        response.answers.push(...parsedResponse.answers);
+      }
+      break;
+    case 1: // IQUERY
+    case 2: // STATUS
+    default: // Unknown opcodes
+      response.setRcode(4); // Not Implemented
+      break;
   }
 
   return response;
