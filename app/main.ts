@@ -74,11 +74,27 @@ function createDNSHeader(): Buffer {
     return buffer;
 }
 
+function createDNSQuestion(): Buffer {
+    const name = Buffer.from("0c636f6465637261667465727302696f00", "hex"); // codecrafters.io
+    const type = Buffer.alloc(2);
+    type.writeUInt16BE(1, 0); // Type A
+    const cls = Buffer.alloc(2);
+    cls.writeUInt16BE(1, 0); // Class IN
+
+    return Buffer.concat([name, type, cls]);
+}
+
+function createDNSResponse(): Buffer {
+    const header = createDNSHeader();
+    const question = createDNSQuestion();
+    return Buffer.concat([header, question]);
+}
+
 udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     try {
         console.log(`[${new Date().toISOString()}] Received data from ${remoteAddr.address}:${remoteAddr.port}`);
         console.log(`[${new Date().toISOString()}] Data: ${data.toString('hex')}`);
-        const response = createDNSHeader();
+        const response = createDNSResponse();
         udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
                 console.log(`[${new Date().toISOString()}] Error sending data: ${err}`);
