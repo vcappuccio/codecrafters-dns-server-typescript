@@ -129,14 +129,22 @@ class DNSMessage {
     if (queryData) {
       this.packetId = queryData.readUInt16BE(0);
       this.queryResponse = true;
-      const opCodeByteAndRdByte = queryData[2];
-      this.opCode = (opCodeByteAndRdByte >> 3) & 0b0111;
-      this.recursionDesired = Boolean(opCodeByteAndRdByte & 0b00000001);
-      this.records = parseQuestionSection(queryData, 12).map((question) => ({
-        ...question,
-        ttl: 60,
-        data: '8.8.8.8',
-      }));
+      const flags = queryData.readUInt16BE(2);
+      this.opCode = (flags >> 11) & 0xF;
+      this.recursionDesired = Boolean(flags & 0x0100);
+      
+      // Set response code based on opCode
+      if (this.opCode === 1) { // IQUERY
+        this.responseCode = 4; // Not Implemented
+        this.records = [];
+      } else {
+        this.responseCode = 0; // No error
+        this.records = parseQuestionSection(queryData, 12).map((question) => ({
+          ...question,
+          ttl: 60,
+          data: '8.8.8.8',
+        }));
+      }
     } else {
       throw new Error('DNSMessage question mode not implemented');
     }
@@ -165,7 +173,7 @@ class DNSMessage {
     
     header.writeUInt16BE(flags, 2);
     header.writeUInt16BE(this.records.length, 4); // QDCOUNT
-    header.writeUInt16BE(this.records.length, 6); // ANCOUNT
+    header.writeUInt16BE(this.opCode === 1 ? 0 : this.records.length, 6); // ANCOUNT
     header.writeUInt16BE(0, 8); // NSCOUNT
     header.writeUInt16BE(0, 10); // ARCOUNT
 
@@ -177,7 +185,7 @@ class DNSMessage {
   }
 
   private getAnswerSection(): Buffer {
-    return Buffer.concat(this.records.map(recordToAnswer));
+    return this.opCode === 1 ? Buffer.alloc(0) : Buffer.concat(this.records.map(recordToAnswer));
   }
 }
 
