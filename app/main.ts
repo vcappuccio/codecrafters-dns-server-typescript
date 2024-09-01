@@ -187,7 +187,7 @@ function forwardDNSQuery(query: Buffer): Promise<Buffer> {
 async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   const response = new DNSMessage();
   response.packetId = query.packetId;
-  response.opcode = query.opcode;
+  response.opcode = query.opcode;  // Preserve the original opcode
   response.questions = query.questions;
 
   // Set QR bit for all responses
