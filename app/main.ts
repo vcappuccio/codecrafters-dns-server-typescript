@@ -115,7 +115,7 @@ class DNSMessage {
   toBuffer(): Buffer {
     const headerBuffer = Buffer.alloc(12);
     headerBuffer.writeUInt16BE(this.packetId, 0);
-    headerBuffer.writeUInt16BE(this.flags, 2);
+    headerBuffer.writeUInt16BE(this.getFlags(), 2);
     headerBuffer.writeUInt16BE(this.questions.length, 4);
     headerBuffer.writeUInt16BE(this.answers.length, 6);
     headerBuffer.writeUInt16BE(0, 8); // NSCOUNT
@@ -159,6 +159,15 @@ class DNSMessage {
   setRcode(rcode: number): void {
     this.flags = (this.flags & 0xFFF0) | (rcode & 0x0F);
   }
+
+  setFlags(flags: number): void {
+    this.flags = flags;
+    this.opcode = (flags >> 11) & 0xF;
+  }
+
+  getFlags(): number {
+    return this.flags | (this.opcode << 11);
+  }
 }
 
 // Add a function to forward DNS query
@@ -187,11 +196,11 @@ function forwardDNSQuery(query: Buffer): Promise<Buffer> {
 async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   const response = new DNSMessage();
   response.packetId = query.packetId;
-  response.opcode = query.opcode;  // Preserve the original opcode
   response.questions = query.questions;
 
-  // Set QR bit for all responses
-  response.flags = 0x8000 | (query.flags & 0x0100); // QR bit set + copy RD bit
+  // Preserve the opcode and set QR bit
+  const responseFlags = (query.getFlags() & 0x7800) | 0x8000 | (query.flags & 0x0100);
+  response.setFlags(responseFlags);
 
   if (query.opcode === 0) { // QUERY
     response.flags |= 0x0080; // Set RA bit for QUERY
@@ -200,8 +209,7 @@ async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
       const responses = await Promise.all(query.questions.map(async (q) => {
         const singleQuery = new DNSMessage();
         singleQuery.packetId = query.packetId;
-        singleQuery.flags = query.flags;
-        singleQuery.opcode = query.opcode;
+        singleQuery.setFlags(query.getFlags());
         singleQuery.questions = [q];
         const forwardedResponse = await forwardDNSQuery(singleQuery.toBuffer());
         return new DNSMessage(forwardedResponse);
