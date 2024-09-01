@@ -28,7 +28,7 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             if (err) {
                 console.log(`[${new Date().toISOString()}] Error forwarding data: ${err}`);
             } else {
-                console.log(`[${new Date().toISOString()}] Data forwarded to resolver`);
+                console.log(`[${new Date().toISOString()}] Data forwarded to resolver at ${resolverIP}:${resolverPort}`);
             }
         });
 
