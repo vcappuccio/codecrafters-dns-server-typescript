@@ -1,9 +1,9 @@
-import * as dgram from "dgram";
-import { argv } from "process";
+import * as dgram from 'dgram';
+import { argv } from 'process';
 
 const PORT = 2053;
-const udpSocket: dgram.Socket = dgram.createSocket("udp4");
-const resolverAddress = (argv[2] || "8.8.8.8:53").split(":");
+const udpSocket: dgram.Socket = dgram.createSocket('udp4');
+const resolverAddress = (argv[2] || '8.8.8.8:53').split(':');
 const resolverIP = resolverAddress[0];
 const resolverPort = resolverAddress[1] ? parseInt(resolverAddress[1], 10) : 53;
 
@@ -11,24 +11,24 @@ if (isNaN(resolverPort) || resolverPort < 0 || resolverPort > 65535) {
     throw new Error(`Invalid Port: ${resolverPort}. Ports must be >= 0 and <= 65535.`);
 }
 
-console.log(`[${new Date().toISOString()}] Socket created`);
+console.log('Logs from your program will appear here!');
 
-udpSocket.bind(PORT, "127.0.0.1", () => {
+udpSocket.bind(PORT, '127.0.0.1', () => {
     console.log(`[${new Date().toISOString()}] Socket bound to 127.0.0.1:${PORT}`);
 });
 
-udpSocket.on("listening", () => {
+udpSocket.on('listening', () => {
     const address = udpSocket.address();
     console.log(`[${new Date().toISOString()}] Server listening on ${address.address}:${address.port}`);
 });
 
-udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
+udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     try {
         console.log(`[${new Date().toISOString()}] Received data from ${remoteAddr.address}:${remoteAddr.port}`);
         console.log(`[${new Date().toISOString()}] Data: ${data.toString('hex')}`);
 
         if (data.length < 12) {
-            throw new Error("Invalid DNS message: too short");
+            throw new Error('Invalid DNS message: too short');
         }
 
         const id = data.readUInt16BE(0); // Read ID from request
@@ -119,12 +119,12 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     }
 });
 
-udpSocket.on("error", (err) => {
+udpSocket.on('error', (err) => {
     console.log(`[${new Date().toISOString()}] Socket error: ${err}`);
     udpSocket.close();
 });
 
-udpSocket.on("close", () => {
+udpSocket.on('close', () => {
     console.log(`[${new Date().toISOString()}] Socket closed`);
 });
 
