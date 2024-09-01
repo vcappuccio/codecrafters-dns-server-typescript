@@ -76,8 +76,8 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             });
             questionBuffer.writeUInt8(0, offset); // Null byte to end the name
             offset += 1;
-            questionBuffer.writeUInt16BE(question.type, offset); // Type A
-            questionBuffer.writeUInt16BE(question.qclass, offset + 2); // Class IN
+            questionBuffer.writeUInt16BE(1, offset); // Type A
+            questionBuffer.writeUInt16BE(1, offset + 2); // Class IN
             return questionBuffer;
         }));
 
@@ -103,6 +103,8 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         }));
 
         const response = Buffer.concat([header, questionSection, answerSection]);
+
+        console.log(`[${new Date().toISOString()}] Sending response: ${response.toString('hex')}`);
 
         udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
