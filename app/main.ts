@@ -17,7 +17,6 @@ function parseDomainName(buffer: Buffer, offset: number): { name: string, newOff
         }
         
         if ((length & 0xc0) === 0xc0) {
-            // This is a pointer
             const pointerOffset = ((length & 0x3f) << 8) | buffer[currentOffset + 1];
             const { name } = parseDomainName(buffer, pointerOffset);
             labels.push(name);
@@ -51,13 +50,19 @@ udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
 
         const id = data.readUInt16BE(0);
         const flags = data.readUInt16BE(2);
+        const opcode = (flags >> 11) & 0xF;
         const qdcount = data.readUInt16BE(4);
+
+        let responseCode = 0;
+        if (opcode !== 0 && opcode !== 1) {
+            responseCode = 4; // Not implemented
+        }
 
         const header = Buffer.alloc(12);
         header.writeUInt16BE(id, 0);
-        header.writeUInt16BE(0x8180, 2); // QR=1, Opcode=0, AA=0, TC=0, RD=1, RA=1, Z=0, RCODE=0
+        header.writeUInt16BE(0x8000 | (flags & 0x7800) | responseCode, 2); // QR=1, keep original OPCODE, set RCODE
         header.writeUInt16BE(qdcount, 4);
-        header.writeUInt16BE(qdcount, 6); // ANCOUNT
+        header.writeUInt16BE(responseCode === 0 ? qdcount : 0, 6); // ANCOUNT
         header.writeUInt16BE(0, 8);
         header.writeUInt16BE(0, 10);
 
@@ -84,18 +89,20 @@ udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             responseBuffers.push(questionBuffer);
         });
 
-        questions.forEach(question => {
-            const answerBuffer = Buffer.concat([
-                encodeDomainName(question.name),
-                Buffer.alloc(10),
-                Buffer.from([8, 8, 8, 8]) // IP address 8.8.8.8
-            ]);
-            answerBuffer.writeUInt16BE(1, answerBuffer.length - 14); // Type A
-            answerBuffer.writeUInt16BE(1, answerBuffer.length - 12); // Class IN
-            answerBuffer.writeUInt32BE(60, answerBuffer.length - 10); // TTL
-            answerBuffer.writeUInt16BE(4, answerBuffer.length - 6); // Data length
-            responseBuffers.push(answerBuffer);
-        });
+        if (responseCode === 0) {
+            questions.forEach(question => {
+                const answerBuffer = Buffer.concat([
+                    encodeDomainName(question.name),
+                    Buffer.alloc(10),
+                    Buffer.from([8, 8, 8, 8]) // IP address 8.8.8.8
+                ]);
+                answerBuffer.writeUInt16BE(1, answerBuffer.length - 14); // Type A
+                answerBuffer.writeUInt16BE(1, answerBuffer.length - 12); // Class IN
+                answerBuffer.writeUInt32BE(60, answerBuffer.length - 10); // TTL
+                answerBuffer.writeUInt16BE(4, answerBuffer.length - 6); // Data length
+                responseBuffers.push(answerBuffer);
+            });
+        }
 
         const response = Buffer.concat(responseBuffers);
 
