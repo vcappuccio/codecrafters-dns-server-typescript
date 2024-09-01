@@ -5,7 +5,7 @@ const PORT = 2053;
 const udpSocket: dgram.Socket = dgram.createSocket("udp4");
 const resolverAddress = (argv[2] || "8.8.8.8:53").split(":");
 const resolverIP = resolverAddress[0];
-const resolverPort = parseInt(resolverAddress[1]);
+const resolverPort = parseInt(resolverAddress[1], 10);
 
 console.log(`[${new Date().toISOString()}] Socket created`);
 
