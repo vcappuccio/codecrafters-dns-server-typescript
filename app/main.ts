@@ -33,6 +33,17 @@ function parseDomainName(buffer: Buffer, offset: number): { name: string, newOff
     return { name: labels.join('.'), newOffset: currentOffset };
 }
 
+function encodeDomainName(name: string): Buffer {
+    const labels = name.split('.');
+    const buffers = labels.map(label => {
+        const labelBuffer = Buffer.alloc(label.length + 1);
+        labelBuffer.writeUInt8(label.length, 0);
+        labelBuffer.write(label, 1);
+        return labelBuffer;
+    });
+    return Buffer.concat([...buffers, Buffer.from([0])]);
+}
+
 udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     try {
         console.log(`[${new Date().toISOString()}] Received data from ${remoteAddr.address}:${remoteAddr.port}`);
@@ -61,44 +72,32 @@ udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             questions.push({ name, type, qclass });
         }
 
-        const questionSection = Buffer.concat(questions.map(question => {
-            const labels = question.name.split('.');
-            const questionBuffer = Buffer.alloc(question.name.length + 6 + labels.length);
-            let qOffset = 0;
-            labels.forEach(label => {
-                questionBuffer.writeUInt8(label.length, qOffset);
-                qOffset += 1;
-                questionBuffer.write(label, qOffset);
-                qOffset += label.length;
-            });
-            questionBuffer.writeUInt8(0, qOffset);
-            qOffset += 1;
-            questionBuffer.writeUInt16BE(question.type, qOffset);
-            questionBuffer.writeUInt16BE(question.qclass, qOffset + 2);
-            return questionBuffer;
-        }));
+        const responseBuffers = [header];
 
-        const answerSection = Buffer.concat(questions.map(question => {
-            const labels = question.name.split('.');
-            const answerBuffer = Buffer.alloc(question.name.length + 16 + labels.length);
-            let aOffset = 0;
-            labels.forEach(label => {
-                answerBuffer.writeUInt8(label.length, aOffset);
-                aOffset += 1;
-                answerBuffer.write(label, aOffset);
-                aOffset += label.length;
-            });
-            answerBuffer.writeUInt8(0, aOffset);
-            aOffset += 1;
-            answerBuffer.writeUInt16BE(1, aOffset); // Type A
-            answerBuffer.writeUInt16BE(1, aOffset + 2); // Class IN
-            answerBuffer.writeUInt32BE(60, aOffset + 4); // TTL
-            answerBuffer.writeUInt16BE(4, aOffset + 8); // Data length
-            answerBuffer.writeUInt32BE(0x08080808, aOffset + 10); // Address 8.8.8.8
-            return answerBuffer;
-        }));
+        questions.forEach(question => {
+            const questionBuffer = Buffer.concat([
+                encodeDomainName(question.name),
+                Buffer.alloc(4)
+            ]);
+            questionBuffer.writeUInt16BE(question.type, questionBuffer.length - 4);
+            questionBuffer.writeUInt16BE(question.qclass, questionBuffer.length - 2);
+            responseBuffers.push(questionBuffer);
+        });
 
-        const response = Buffer.concat([header, questionSection, answerSection]);
+        questions.forEach(question => {
+            const answerBuffer = Buffer.concat([
+                encodeDomainName(question.name),
+                Buffer.alloc(10),
+                Buffer.from([8, 8, 8, 8]) // IP address 8.8.8.8
+            ]);
+            answerBuffer.writeUInt16BE(1, answerBuffer.length - 14); // Type A
+            answerBuffer.writeUInt16BE(1, answerBuffer.length - 12); // Class IN
+            answerBuffer.writeUInt32BE(60, answerBuffer.length - 10); // TTL
+            answerBuffer.writeUInt16BE(4, answerBuffer.length - 6); // Data length
+            responseBuffers.push(answerBuffer);
+        });
+
+        const response = Buffer.concat(responseBuffers);
 
         console.log(`[${new Date().toISOString()}] Sending response: ${response.toString('hex')}`);
 
