@@ -27,6 +27,7 @@ interface DNSRecord {
 class DNSMessage {
   packetId: number = 0;
   flags: number = 0;
+  opcode: number = 0;
   questions: Question[] = [];
   answers: DNSRecord[] = [];
 
@@ -41,6 +42,7 @@ class DNSMessage {
     this.packetId = data.readUInt16BE(offset);
     offset += 2;
     this.flags = data.readUInt16BE(offset);
+    this.opcode = (this.flags >> 11) & 0xF; // Extract OPCODE from flags
     offset += 2;
     const qdcount = data.readUInt16BE(offset);
     offset += 2;
@@ -62,58 +64,11 @@ class DNSMessage {
     }
   }
 
-  private parseQuestion(data: Buffer, offset: number): [Question, number] {
-    const [name, newOffset] = this.parseName(data, offset);
-    const qtype = data.readUInt16BE(newOffset);
-    const qclass = data.readUInt16BE(newOffset + 2);
-    return [{ name, qtype, qclass }, newOffset + 4];
-  }
-
-  private parseAnswer(data: Buffer, offset: number): [DNSRecord, number] {
-    const [name, newOffset] = this.parseName(data, offset);
-    const type = data.readUInt16BE(newOffset);
-    const cls = data.readUInt16BE(newOffset + 2);
-    const ttl = data.readUInt32BE(newOffset + 4);
-    const rdlength = data.readUInt16BE(newOffset + 8);
-    const rdata = data.slice(newOffset + 10, newOffset + 10 + rdlength);
-    return [{ name, type, cls, ttl, rdlength, rdata }, newOffset + 10 + rdlength];
-  }
-
-  private parseName(data: Buffer, offset: number): [string, number] {
-    const labels: string[] = [];
-    let currentOffset = offset;
-    let jumping = false;
-    let jumpOffset = -1;
-
-    while (true) {
-      const length = data[currentOffset];
-
-      if (length === 0) {
-        if (!jumping) currentOffset++;
-        break;
-      }
-
-      if ((length & 0xc0) === 0xc0) {
-        if (!jumping) {
-          jumpOffset = currentOffset + 2;
-        }
-        const pointerOffset = ((length & 0x3f) << 8) | data[currentOffset + 1];
-        currentOffset = pointerOffset;
-        jumping = true;
-      } else {
-        currentOffset++;
-        labels.push(data.slice(currentOffset, currentOffset + length).toString('ascii'));
-        currentOffset += length;
-      }
-    }
-
-    return [labels.join('.'), jumping ? jumpOffset : currentOffset];
-  }
-
   toBuffer(): Buffer {
     const headerBuffer = Buffer.alloc(12);
     headerBuffer.writeUInt16BE(this.packetId, 0);
-    headerBuffer.writeUInt16BE(this.flags, 2);
+    const flags = (this.flags & 0xF800) | (this.opcode << 11) | (this.flags & 0x07FF);
+    headerBuffer.writeUInt16BE(flags, 2);
     headerBuffer.writeUInt16BE(this.questions.length, 4);
     headerBuffer.writeUInt16BE(this.answers.length, 6);
     headerBuffer.writeUInt16BE(0, 8); // NSCOUNT
@@ -182,12 +137,14 @@ async function handleDNSQuery(query: DNSMessage): Promise<DNSMessage> {
   const response = new DNSMessage();
   response.packetId = query.packetId;
   response.flags = 0x8180; // Standard query response, no error
+  response.opcode = query.opcode; // Preserve the original OPCODE
   response.questions = query.questions;
 
   for (const question of query.questions) {
     const singleQuestionQuery = new DNSMessage();
     singleQuestionQuery.packetId = query.packetId;
     singleQuestionQuery.flags = query.flags;
+    singleQuestionQuery.opcode = query.opcode;
     singleQuestionQuery.questions = [question];
 
     const forwardedResponse = await forwardDNSQuery(singleQuestionQuery.toBuffer());
