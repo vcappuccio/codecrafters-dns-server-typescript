@@ -171,7 +171,6 @@ udpSocket.on('message', (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
     console.log(`Error sending data: ${e}`);
   }
 });
-
 udpSocket.bind(PORT, '127.0.0.1', () => {
     console.log(`[${new Date().toISOString()}] Socket bound to 127.0.0.1:${PORT}`);
 });
