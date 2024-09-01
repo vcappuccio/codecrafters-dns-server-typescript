@@ -45,16 +45,46 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         header.writeUInt16BE(0, 8); // NSCOUNT
         header.writeUInt16BE(0, 10); // ARCOUNT
 
-        // Create a simple answer section
-        const answer = Buffer.alloc(16);
-        answer.writeUInt16BE(0xc00c, 0); // Name (pointer to the domain name in the question section)
-        answer.writeUInt16BE(1, 2); // Type A
-        answer.writeUInt16BE(1, 4); // Class IN
-        answer.writeUInt32BE(300, 6); // TTL
-        answer.writeUInt16BE(4, 10); // Data length
-        answer.writeUInt32BE(0x7f000001, 12); // Address 127.0.0.1
+        // Parse question section
+        let offset = 12;
+        const questions = [];
+        for (let i = 0; i < 2; i++) {
+            const labels = [];
+            while (data[offset] !== 0) {
+                const length = data[offset];
+                labels.push(data.slice(offset + 1, offset + 1 + length).toString());
+                offset += length + 1;
+            }
+            offset += 1; // Skip the null byte
+            const name = labels.join('.');
+            const type = data.readUInt16BE(offset);
+            const qclass = data.readUInt16BE(offset + 2);
+            offset += 4;
+            questions.push({ name, type, qclass });
+        }
 
-        const response = Buffer.concat([header, data.slice(12), answer]);
+        // Create a simple answer section
+        const answers = questions.map(question => {
+            const answer = Buffer.alloc(16 + question.name.length + 2);
+            let offset = 0;
+            const labels = question.name.split('.');
+            labels.forEach(label => {
+                answer.writeUInt8(label.length, offset);
+                offset += 1;
+                answer.write(label, offset);
+                offset += label.length;
+            });
+            answer.writeUInt8(0, offset); // Null byte to end the name
+            offset += 1;
+            answer.writeUInt16BE(1, offset); // Type A
+            answer.writeUInt16BE(1, offset + 2); // Class IN
+            answer.writeUInt32BE(60, offset + 4); // TTL
+            answer.writeUInt16BE(4, offset + 8); // Data length
+            answer.writeUInt32BE(0x08080808, offset + 10); // Address 8.8.8.8
+            return answer;
+        });
+
+        const response = Buffer.concat([header, ...questions.map(q => Buffer.from(q.name)), ...answers]);
 
         udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
