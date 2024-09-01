@@ -31,21 +31,29 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
             throw new Error("Invalid DNS message: too short");
         }
 
-        const id = data.readUInt16BE(0); // Read ID from request
-        const flags = data.readUInt16BE(2); // Read flags from request
-        const opcode = (flags >> 11) & 0x0F; // Extract OPCODE
-        const rd = (flags >> 8) & 0x01; // Extract RD
-        const rcode = opcode === 0 ? 0 : 4; // Set RCODE based on OPCODE
+        const id = data.readUInt16BE(0);
+        const flags = data.readUInt16BE(2);
+        const opcode = (flags >> 11) & 0x0F;
+        const rd = (flags >> 8) & 0x01;
+        const rcode = opcode === 0 ? 0 : 4;
 
         const header = Buffer.alloc(12);
-        header.writeUInt16BE(id, 0); // Mimic ID from request
-        header.writeUInt16BE(0x8000 | (opcode << 11) | (rd << 8) | rcode, 2); // Set response flags
-        header.writeUInt16BE(1, 4); // QDCOUNT
-        header.writeUInt16BE(1, 6); // ANCOUNT
-        header.writeUInt16BE(0, 8); // NSCOUNT
-        header.writeUInt16BE(0, 10); // ARCOUNT
+        header.writeUInt16BE(id, 0);
+        header.writeUInt16BE(0x8000 | (opcode << 11) | (rd << 8) | rcode, 2);
+        header.writeUInt16BE(1, 4);
+        header.writeUInt16BE(1, 6);
+        header.writeUInt16BE(0, 8);
+        header.writeUInt16BE(0, 10);
 
-        const response = Buffer.concat([header]);
+        const answer = Buffer.alloc(16);
+        answer.writeUInt16BE(0xc00c, 0);
+        answer.writeUInt16BE(1, 2);
+        answer.writeUInt16BE(1, 4);
+        answer.writeUInt32BE(300, 6);
+        answer.writeUInt16BE(4, 10);
+        answer.writeUInt32BE(0x7f000001, 12);
+
+        const response = Buffer.concat([header, answer]);
 
         udpSocket.send(response, 0, response.length, remoteAddr.port, remoteAddr.address, (err) => {
             if (err) {
