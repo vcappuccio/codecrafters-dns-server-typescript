@@ -27,9 +27,15 @@ udpSocket.on("message", (data: Buffer, remoteAddr: dgram.RemoteInfo) => {
         console.log(`[${new Date().toISOString()}] Received data from ${remoteAddr.address}:${remoteAddr.port}`);
         console.log(`[${new Date().toISOString()}] Data: ${data.toString('hex')}`);
 
+        const id = data.readUInt16BE(0);
+        const flags = data.readUInt16BE(2);
+        const opcode = (flags >> 11) & 0x0F;
+        const rd = (flags >> 8) & 0x01;
+        const rcode = opcode === 0 ? 0 : 4;
+
         const header = Buffer.alloc(12);
-        header.writeUInt16BE(1234, 0); // ID
-        header.writeUInt16BE(0x8180, 2); // Flags
+        header.writeUInt16BE(id, 0); // ID
+        header.writeUInt16BE(0x8180 | (opcode << 11) | (rd << 8) | rcode, 2); // Flags
         header.writeUInt16BE(1, 4); // QDCOUNT
         header.writeUInt16BE(1, 6); // ANCOUNT
         header.writeUInt16BE(0, 8); // NSCOUNT
